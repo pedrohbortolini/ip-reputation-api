@@ -62,7 +62,16 @@ jobs:
         run: |
           aws ecs describe-task-definition \
             --task-definition ${{ secrets.ECS_TASK_DEFINITION }} \
-            --query taskDefinition > task-def.json
+            --query taskDefinition > task-def-raw.json
+          cat task-def-raw.json | python3 -c "
+          import json, sys
+          td = json.load(sys.stdin)
+          for key in ['enableFaultInjection', 'taskDefinitionArn', 'revision', 
+                      'status', 'requiresAttributes', 'compatibilities', 
+                      'registeredAt', 'registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          " > task-def.json
 
       - name: Atualizar imagem na task definition
         id: task-def
