@@ -33,6 +33,23 @@ curl http://localhost:8000/reputation/8.8.8.8
 ## Architecture
 
 ```
+User (curl / browser)
+        │
+        ▼
+   ALB (port 80)  ─── health check every 30s ──▶ /health
+        │
+   ┌────┴────┐
+   ▼         ▼
+ ECS Task  ECS Task    (Fargate, 2 AZs, public subnets)
+ :8000     :8000
+   │         │
+   ▼         ▼
+ AbuseIPDB + IPInfo    (external APIs via httpx)
+```
+
+**Application code:**
+
+```
 app/cache.py       — in-memory TTL cache (1 hour) to avoid redundant API calls
 app/reputation.py  — fetches and consolidates data from AbuseIPDB and IPInfo
 app/main.py        — FastAPI app with /health and /reputation/{ip} endpoints
@@ -47,6 +64,7 @@ Dockerfile         — multi-stage build: deps stage + lean runtime stage
 - Graceful degradation: if one external API fails, the response still includes data from the other
 - Cache is per-process (in-memory); with multiple containers running, each has its own cache — a shared Redis cache would be the production solution
 - Container runs as a non-root user (`appuser`) for security
+- Async functions (`async/await`) with `httpx` allow the server to handle multiple requests concurrently without blocking while waiting for external API responses
 
 ## Running locally
 
@@ -79,11 +97,57 @@ pytest -v
 | `ABUSEIPDB_KEY` | API key from [abuseipdb.com](https://abuseipdb.com) (free tier: 1000 req/day) |
 | `IPINFO_KEY` | API key from [ipinfo.io](https://ipinfo.io) (free tier: 50k req/month) |
 
-Copy `.env.example` to `.env` and fill in your keys. Never commit `.env`.
+
+## Phase 2 — AWS Deployment
+
+The application was deployed to AWS using the following services:
+
+- **ECR** — private container registry to store the Docker image
+- **ECS Fargate** — runs 2 containers (tasks) across 2 availability zones without managing servers
+- **ALB** — Application Load Balancer distributes traffic on port 80 and performs health checks on `/health`
+- **Secrets Manager** — stores API keys securely; injected into containers at runtime via IAM role (never hardcoded or exposed in environment variables)
+- **CloudWatch Logs** — captures container logs for debugging
+
+**Security measures:**
+
+- ECS security group only accepts traffic from the ALB security group on port 8000 — containers are not directly accessible from the internet
+- Task execution role follows least privilege: only permissions to pull images from ECR and read secrets from Secrets Manager
+- Container runs as non-root user inside the image
+
+**What I would change in production:**
+
+- Use private subnets with a NAT Gateway for defense in depth (skipped here to avoid the ~$32/month cost)
+- Replace in-memory cache with Redis (ElastiCache) for shared caching across containers
+- Add HTTPS with an ACM certificate on the ALB
+- Configure ECS auto-scaling based on CPU/memory metrics
+
+## Phase 3 — CI/CD with GitHub Actions
+
+Every push to `main` triggers an automated pipeline:
+
+```
+git push → GitHub Actions
+              │
+              ├─ Job 1: Test
+              │   └─ pytest -v (4 tests)
+              │         │
+              │      pass? ──▶ no ──▶ deploy blocked
+              │         │
+              │        yes
+              │         ▼
+              └─ Job 2: Build & Deploy
+                  ├─ docker build (tagged with commit SHA)
+                  ├─ docker push → ECR
+                  ├─ update ECS task definition
+                  └─ rolling deploy → ECS (zero downtime)
+```
+
+Pipeline configuration is in `.github/workflows/deploy.yml`. AWS credentials are stored as GitHub repository secrets — never in code.
 
 ## Roadmap
 
-- **Phase 2** — Manual AWS deployment: push image to ECR, run on ECS Fargate behind an Application Load Balancer, store API keys in Secrets Manager, deploy across 2 availability zones
-- **Phase 3** — CI/CD with GitHub Actions: automated test → build → push to ECR → rolling deploy to ECS on every push to `main`
+- ~~Phase 1~~ — ✅ Application + Docker + tests
+- ~~Phase 2~~ — ✅ Manual AWS deployment (ECR, ECS, ALB, Secrets Manager)
+- ~~Phase 3~~ — ✅ CI/CD with GitHub Actions
 - **Phase 4** — Infrastructure as Code with Terraform
 - **Phase 5** — Observability: CloudWatch dashboard, custom metrics (cache hit rate, external API latency), alarms
