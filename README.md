@@ -149,5 +149,5 @@ Pipeline configuration is in `.github/workflows/deploy.yml`. AWS credentials are
 - ~~Phase 1~~ — ✅ Application + Docker + tests
 - ~~Phase 2~~ — ✅ Manual AWS deployment (ECR, ECS, ALB, Secrets Manager)
 - ~~Phase 3~~ — ✅ CI/CD with GitHub Actions
-- **Phase 4** — Infrastructure as Code with Terraform
+- ~~Phase 4~~ — ✅ Infrastructure as Code with Terraform (`infra/`)
 - **Phase 5** — Observability: CloudWatch dashboard, custom metrics (cache hit rate, external API latency), alarms
