@@ -1,0 +1,12 @@
+# ============================================
+# Exemplo de valores para as variáveis
+# ============================================
+
+aws_region    = "us-east-1"
+app_name      = "ip-reputation"
+environment   = "dev"
+desired_count = 2
+
+# ARN do secret no Secrets Manager (criado manualmente ou via CLI).
+# Formato: arn:aws:secretsmanager:REGIAO:CONTA:secret:NOME-RANDOM
+secrets_arn = "arn:aws:secretsmanager:us-east-1:conta:secret:ip-reputation/api-keys-XXXXXX"
