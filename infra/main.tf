@@ -1,9 +1,6 @@
-#Indica a configuração do terraform/opentofu e quais plugins ele precisa e suas versões
 terraform {
-  #Versão mínima do terraform/opentofu para conseguir rodar o código.
   required_version = ">= 1.5.0"
 
-#plugin feito pela hashicorp pra traduzir os arquivos .tf em chamadas API.
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -11,11 +8,6 @@ terraform {
     }
   }
 
-  # Backend remoto no S3 — guarda o state fora da sua máquina.
-  # Descomente quando tiver o bucket criado.
-  # Sem isso o state fica local (terraform.tfstate) e se você perder
-  # o arquivo, o Terraform perde noção do que já foi criado.
-  #
   # backend "s3" {
   #   bucket = "ip-reputation-tf-state"
   #   key    = "infra/terraform.tfstate"
@@ -23,14 +15,9 @@ terraform {
   # }
 }
 
-#Configuração de como se conectar na AWS.
-#Bloco obrigatório, sem ele o OpenTofu não sabe para onde ir na AWS.
-#O bloco até funcionaria tendo região configurada no "aws configure" mas é má prática.
 provider "aws" {
   region = var.aws_region
 
-  # Tags aplicadas automaticamente em TODOS os recursos criados.
-  # Facilita identificar o que pertence a esse projeto no console.
   default_tags {
     tags = {
       Project     = var.app_name
@@ -39,10 +26,6 @@ provider "aws" {
     }
   }
 }
-
-# ============================================
-# Variáveis
-# ============================================
 
 variable "aws_region" {
   description = "Região AWS onde os recursos serão criados"
@@ -91,23 +74,10 @@ variable "secrets_arn" {
   type        = string
 }
 
-# ============================================
-# Locals — valores derivados das variáveis
-# ============================================
-# Locals evitam repetição. Em vez de escrever "${var.app_name}-alb"
-# em 5 lugares diferentes, centraliza aqui.
-
 locals {
   name_prefix = "${var.app_name}-${var.environment}"
 }
 
-# ============================================
-# Data sources — busca informações da AWS
-# ============================================
-
-# Pega as AZs disponíveis na região automaticamente.
-# Assim o código funciona em qualquer região sem hardcodar AZs.
 data "aws_availability_zones" "available" {
-  #retorna as AZs que estão de pé e aceitando recursos
   state = "available"
 }

@@ -1,19 +1,27 @@
 import ipaddress
+
 from fastapi import FastAPI, HTTPException
+
 from app.cache import TTLCache
 from app.reputation import get_reputation, ExternalAPIError
+from app.metrics import (
+    prometheus_middleware,
+    metrics_endpoint,
+    cache_hits_total,
+    cache_misses_total,
+    cache_size,
+)
 
 
 app = FastAPI(title="IP Reputation API", version="1.0.0")
 
-# Cache vive enquanto o container estiver de pé — 1h de TTL por IP.
+app.middleware("http")(prometheus_middleware)
+
 cache = TTLCache(ttl_seconds=3600)
 
 
 @app.get("/health")
 async def health():
-    # Endpoint propositalmente trivial — o ALB bate aqui a cada 30s
-    # e não pode falhar por causa de uma API externa fora do ar.
     return {"status": "ok"}
 
 
@@ -26,7 +34,10 @@ async def reputation(ip: str):
 
     cached = cache.get(ip)
     if cached is not None:
+        cache_hits_total.inc()
         return {**cached, "cached": True}
+
+    cache_misses_total.inc()
 
     try:
         result = await get_reputation(ip)
@@ -34,4 +45,9 @@ async def reputation(ip: str):
         raise HTTPException(status_code=503, detail=str(e))
 
     cache.set(ip, result)
+    cache_size.set(len(cache._store))
+
     return {**result, "cached": False}
+
+
+app.add_route("/metrics", metrics_endpoint)

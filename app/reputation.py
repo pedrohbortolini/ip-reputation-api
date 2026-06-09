@@ -1,18 +1,36 @@
 import os
+import time
+
 import httpx
 
+from app.metrics import (
+    external_api_requests_total,
+    external_api_duration_seconds,
+)
 
-# Sem timeout, uma API travada derrubaria toda a aplicação.
+
 TIMEOUT = httpx.Timeout(5.0)
 
 
 class ExternalAPIError(Exception):
-    """Erro ao consultar uma das APIs externas (AbuseIPDB ou IPInfo)."""
     pass
 
 
-async def fetch_abuseipdb(ip: str) -> dict:
-    """Consulta AbuseIPDB e retorna dados de reputação."""
+async def _instrumented_call(api_name: str, fetch_fn, *args, **kwargs):
+    start = time.perf_counter()
+    try:
+        result = await fetch_fn(*args, **kwargs)
+        external_api_requests_total.labels(api=api_name, status="success").inc()
+        return result
+    except Exception:
+        external_api_requests_total.labels(api=api_name, status="error").inc()
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        external_api_duration_seconds.labels(api=api_name).observe(duration)
+
+
+async def _fetch_abuseipdb(ip: str) -> dict:
     api_key = os.getenv("ABUSEIPDB_KEY")
     if not api_key:
         raise ExternalAPIError("ABUSEIPDB_KEY não configurada")
@@ -36,8 +54,7 @@ async def fetch_abuseipdb(ip: str) -> dict:
             raise ExternalAPIError(f"AbuseIPDB falhou: {e}")
 
 
-async def fetch_ipinfo(ip: str) -> dict:
-    """Consulta IPInfo e retorna dados de localização/provedor."""
+async def _fetch_ipinfo(ip: str) -> dict:
     api_key = os.getenv("IPINFO_KEY")
     if not api_key:
         raise ExternalAPIError("IPINFO_KEY não configurada")
@@ -61,20 +78,15 @@ async def fetch_ipinfo(ip: str) -> dict:
 
 
 async def get_reputation(ip: str) -> dict:
-    """
-    Consulta ambas as APIs e consolida num único dicionário.
-    Se uma falhar, retorna o que a outra trouxe + lista de erros.
-    Se as duas falharem, levanta ExternalAPIError.
-    """
     result = {"ip": ip, "abuseipdb": None, "ipinfo": None, "errors": []}
 
     try:
-        result["abuseipdb"] = await fetch_abuseipdb(ip)
+        result["abuseipdb"] = await _instrumented_call("abuseipdb", _fetch_abuseipdb, ip)
     except ExternalAPIError as e:
         result["errors"].append(str(e))
 
     try:
-        result["ipinfo"] = await fetch_ipinfo(ip)
+        result["ipinfo"] = await _instrumented_call("ipinfo", _fetch_ipinfo, ip)
     except ExternalAPIError as e:
         result["errors"].append(str(e))
 

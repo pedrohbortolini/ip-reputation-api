@@ -1,9 +1,3 @@
-# ============================================
-# Outputs — valores exibidos após terraform apply
-# ============================================
-# Outputs são os valores que o Terraform mostra no final do apply.
-# Também podem ser usados por outros módulos Terraform ou scripts.
-
 output "alb_dns_name" {
   description = "DNS do ALB — use para acessar a API"
   value       = aws_lb.main.dns_name

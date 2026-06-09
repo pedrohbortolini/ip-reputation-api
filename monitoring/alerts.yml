@@ -1,0 +1,40 @@
+groups:
+  - name: ip-reputation-api
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Taxa de erro 5xx acima de 5%"
+          description: "Mais de 5% das requests estão retornando 5xx nos últimos 5 minutos. Investigar logs."
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p99 de latência acima de 500ms em {{ $labels.route }}"
+          description: "A rota {{ $labels.route }} tem p99 de latência alto há 5 minutos. Possível upstream lento ou cache miss."
+
+      - alert: ExternalAPIFailureRate
+        expr: |
+          sum(rate(external_api_requests_total{status="error"}[5m])) by (api)
+          /
+          sum(rate(external_api_requests_total[5m])) by (api) > 0.20
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mais de 20% de erro chamando {{ $labels.api }}"
+          description: "A API externa {{ $labels.api }} está falhando muito. Verificar status do provedor e cota de uso."
